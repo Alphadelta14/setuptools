@@ -555,16 +555,17 @@ class WorkingSet:
 
     def __init__(self, entries=None):
         """Create working set from list of path entries (default=sys.path)"""
-        self.entries = []
-        self.entry_keys = {}
-        self.by_key = {}
+
+        self._entries = None
+        self._by_key = None
+        self._entry_keys = None
+
         self.callbacks = []
 
         if entries is None:
             entries = sys.path
 
-        for entry in entries:
-            self.add_entry(entry)
+        self.paths = entries
 
     @classmethod
     def _build_master(cls):
@@ -618,10 +619,40 @@ class WorkingSet:
         once, and the ``.entries`` of the ``sys.path`` WorkingSet should always
         equal ``sys.path``.)
         """
-        self.entry_keys.setdefault(entry, [])
-        self.entries.append(entry)
+        self._entry_keys.setdefault(entry, [])
+        self._entries.append(entry)
         for dist in find_distributions(entry, True):
             self.add(dist, entry, False)
+
+    def _load_entries(self):
+        """Force entries to be loaded from self.paths."""
+        self._by_key = {}
+        self._entries = []
+        self._entry_keys = {}
+
+        for entry in self.paths:
+            self.add_entry(entry)
+
+    @property
+    def entries(self):
+        """Lazy access to path entries."""
+        if self._entries is None:
+            self._load_entries()
+        return self._entries
+
+    @property
+    def by_key(self):
+        """Lazy access to path entries."""
+        if self._by_key is None:
+            self._load_entries()
+        return self._by_key
+
+    @property
+    def entry_keys(self):
+        """Lazy access to path entries."""
+        if self._entry_keys is None:
+            self._load_entries()
+        return self._entry_keys
 
     def __contains__(self, dist):
         """True if `dist` is the active distribution for its project"""
@@ -3270,21 +3301,11 @@ def _initialize_master_working_set():
     run_script = working_set.run_script
     # backward compatibility
     run_main = run_script
-    # Activate all distributions already on sys.path with replace=False and
-    # ensure that all distributions added to the working set in the future
-    # (e.g. by calling ``require()``) will get activated as well,
-    # with higher priority (replace=True).
-    tuple(
-        dist.activate(replace=False)
-        for dist in working_set
-    )
+
     add_activation_listener(
         lambda dist: dist.activate(replace=True),
         existing=False,
     )
-    working_set.entries = []
-    # match order
-    list(map(working_set.add_entry, sys.path))
     globals().update(locals())
 
 class PkgResourcesDeprecationWarning(Warning):
